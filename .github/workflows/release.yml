@@ -1,0 +1,41 @@
+# Publishes skimmerdb to npm when a version tag (v0.1.0) is pushed: `make clients-sync` in the
+# SkimmerDB repository pushes the snapshot and its tag. Trusted publishing (OIDC): no npm token;
+# npm trusts this repository and this workflow, and adds provenance.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: npm with trusted publishing
+        run: npm install -g npm@latest
+      - name: The tag is the package's version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but package.json says $version"; exit 1; }
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: The package imports
+        run: node -e 'import("./dist/index.js").then((m) => console.log(m.DEFAULT_URL))'
+      - name: Already on npm?
+        id: seen
+        run: |
+          v=$(node -p 'require("./package.json").version')
+          if npm view "skimmerdb@$v" version >/dev/null 2>&1; then echo "skip=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.seen.outputs.skip != 'true'
+        run: npm publish --provenance --access public
