@@ -56,7 +56,7 @@ are retried for you (after `Retry-After`) up to 3 times. It talks to
 
 ## The whole API
 
-Every operation in the [API reference](https://skimmerdb.com/docs#reference) is generated
+Every operation in the [API reference](https://docs.skimmerdb.com/api) is generated
 from the [OpenAPI document](https://api.skimmerdb.com/openapi.json) with
 [@hey-api/openapi-ts](https://heyapi.dev) into `skimmerdb/api`, typed and named by its
 operationId:

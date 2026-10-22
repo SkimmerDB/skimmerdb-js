@@ -2,7 +2,7 @@
 
 import { client } from './client.gen.js';
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client/index.js';
-import type { CountData, CountErrors, CountGetData, CountGetErrors, CountGetResponses, CountResponses, CreateCheckoutData, CreateCheckoutErrors, CreateCheckoutResponses, CreateKeyData, CreateKeyErrors, CreateKeyResponses, CreateNamespaceData, CreateNamespaceErrors, CreateNamespaceResponses, CreatePortalData, CreatePortalErrors, CreatePortalResponses, CreateTenantData, CreateTenantErrors, CreateTenantResponses, DeleteDocumentsData, DeleteDocumentsErrors, DeleteDocumentsResponses, DeleteNamespaceData, DeleteNamespaceErrors, DeleteNamespaceResponses, DeleteTenantData, DeleteTenantErrors, DeleteTenantResponses, GetBillingData, GetBillingErrors, GetBillingResponses, GetDocumentData, GetDocumentErrors, GetDocumentResponses, GetMeData, GetMeErrors, GetMeResponses, GetNamespaceData, GetNamespaceErrors, GetNamespaceResponses, GetOpenapiData, GetOpenapiResponses, GetResourceMetadataData, GetResourceMetadataResponses, GetSidecarData, GetSidecarErrors, GetSidecarResponses, GetUsageData, GetUsageErrors, GetUsageResponses, HealthData, HealthResponses, ImportRowsData, ImportRowsErrors, ImportRowsResponses, ListKeysData, ListKeysErrors, ListKeysResponses, ListNamespacesData, ListNamespacesErrors, ListNamespacesResponses, ListSidecarsData, ListSidecarsErrors, ListSidecarsResponses, ListTenantsData, ListTenantsErrors, ListTenantsResponses, LoginData, LoginErrors, LoginResponses, McpData, McpErrors, McpResponses, QuerySqlData, QuerySqlErrors, QuerySqlResponses, RevokeKeyData, RevokeKeyErrors, RevokeKeyResponses, SearchData, SearchErrors, SearchGetData, SearchGetErrors, SearchGetResponses, SearchResponses, SetKeyLimitsData, SetKeyLimitsErrors, SetKeyLimitsResponses, SignupData, SignupErrors, SignupResponses, UpdateDocumentsData, UpdateDocumentsErrors, UpdateDocumentsResponses, WarmNamespaceData, WarmNamespaceErrors, WarmNamespaceResponses, WriteDocumentsData, WriteDocumentsErrors, WriteDocumentsResponses } from './types.gen.js';
+import type { CountData, CountErrors, CountGetData, CountGetErrors, CountGetResponses, CountResponses, CreateCheckoutData, CreateCheckoutErrors, CreateCheckoutResponses, CreateExportData, CreateExportErrors, CreateExportResponses, CreateKeyData, CreateKeyErrors, CreateKeyResponses, CreateNamespaceData, CreateNamespaceErrors, CreateNamespaceResponses, CreatePortalData, CreatePortalErrors, CreatePortalResponses, CreateTenantData, CreateTenantErrors, CreateTenantResponses, CreateViewData, CreateViewErrors, CreateViewResponses, DeleteDocumentsData, DeleteDocumentsErrors, DeleteDocumentsResponses, DeleteEmbeddingKeyData, DeleteEmbeddingKeyErrors, DeleteEmbeddingKeyResponses, DeleteNamespaceData, DeleteNamespaceErrors, DeleteNamespaceResponses, DeleteTenantData, DeleteTenantErrors, DeleteTenantResponses, DeleteViewData, DeleteViewErrors, DeleteViewResponses, DownloadExportData, DownloadExportErrors, DownloadExportResponses, ForgotPasswordData, ForgotPasswordErrors, ForgotPasswordResponses, GetBillingData, GetBillingErrors, GetBillingResponses, GetDocumentData, GetDocumentErrors, GetDocumentResponses, GetExportData, GetExportErrors, GetExportResponses, GetMeData, GetMeErrors, GetMeResponses, GetNamespaceData, GetNamespaceErrors, GetNamespaceResponses, GetOpenapiData, GetOpenapiResponses, GetResourceMetadataData, GetResourceMetadataResponses, GetSidecarData, GetSidecarErrors, GetSidecarResponses, GetUsageData, GetUsageErrors, GetUsageResponses, GetViewData, GetViewErrors, GetViewResponses, HealthData, HealthResponses, ImportBucketData, ImportBucketErrors, ImportBucketResponses, ImportRowsData, ImportRowsErrors, ImportRowsResponses, ListEmbeddingKeysData, ListEmbeddingKeysErrors, ListEmbeddingKeysResponses, ListExportsData, ListExportsErrors, ListExportsResponses, ListKeysData, ListKeysErrors, ListKeysResponses, ListNamespacesData, ListNamespacesErrors, ListNamespacesResponses, ListSidecarsData, ListSidecarsErrors, ListSidecarsResponses, ListTenantsData, ListTenantsErrors, ListTenantsResponses, ListViewsData, ListViewsErrors, ListViewsResponses, LoginData, LoginErrors, LoginResponses, McpData, McpErrors, McpResponses, QuerySqlData, QuerySqlErrors, QuerySqlGetData, QuerySqlGetErrors, QuerySqlGetResponses, QuerySqlResponses, QuerySqlTenantData, QuerySqlTenantErrors, QuerySqlTenantGetData, QuerySqlTenantGetErrors, QuerySqlTenantGetResponses, QuerySqlTenantResponses, ResendVerificationData, ResendVerificationErrors, ResendVerificationResponses, ResetPasswordData, ResetPasswordErrors, ResetPasswordResponses, RevokeKeyData, RevokeKeyErrors, RevokeKeyResponses, SearchData, SearchErrors, SearchGetData, SearchGetErrors, SearchGetResponses, SearchResponses, SetEmbeddingKeyData, SetEmbeddingKeyErrors, SetEmbeddingKeyResponses, SetKeyLimitsData, SetKeyLimitsErrors, SetKeyLimitsResponses, SignupData, SignupErrors, SignupResponses, SyncLakeData, SyncLakeErrors, SyncLakeResponses, UpdateDocumentsData, UpdateDocumentsErrors, UpdateDocumentsResponses, UpdateNamespaceData, UpdateNamespaceErrors, UpdateNamespaceResponses, VerifyEmailData, VerifyEmailErrors, VerifyEmailResponses, WarmNamespaceData, WarmNamespaceErrors, WarmNamespaceResponses, WriteDocumentsData, WriteDocumentsErrors, WriteDocumentsResponses, WriteDocumentStreamData, WriteDocumentStreamErrors, WriteDocumentStreamResponses } from './types.gen.js';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -57,6 +57,59 @@ export const login = <ThrowOnError extends boolean = false>(options: Options<Log
 });
 
 /**
+ * Verify an email
+ *
+ * Uses the link a signup's email carries (single use, 7 days; skimmerdb.com/verify-email sends it here). Until an owner's email is verified a free tenant gets 1% of the free plan (402 email_unverified past it); after, all of it.
+ */
+export const verifyEmail = <ThrowOnError extends boolean = false>(options: Options<VerifyEmailData, ThrowOnError>): RequestResult<VerifyEmailResponses, VerifyEmailErrors, ThrowOnError> => (options.client ?? client).post<VerifyEmailResponses, VerifyEmailErrors, ThrowOnError>({
+    url: '/v1/email/verify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Send a new verification link
+ *
+ * Emails the signed-in person (or the key's person) a new link, at most once a minute. verified: true when there is nothing to verify.
+ */
+export const resendVerification = <ThrowOnError extends boolean = false>(options?: Options<ResendVerificationData, ThrowOnError>): RequestResult<ResendVerificationResponses, ResendVerificationErrors, ThrowOnError> => (options?.client ?? client).post<ResendVerificationResponses, ResendVerificationErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/email/verify/resend',
+    ...options
+});
+
+/**
+ * Ask for a password reset link
+ *
+ * Emails a reset link (single use, an hour) to the address if it has an account. The answer is the same either way.
+ */
+export const forgotPassword = <ThrowOnError extends boolean = false>(options: Options<ForgotPasswordData, ThrowOnError>): RequestResult<ForgotPasswordResponses, ForgotPasswordErrors, ThrowOnError> => (options.client ?? client).post<ForgotPasswordResponses, ForgotPasswordErrors, ThrowOnError>({
+    url: '/v1/password/forgot',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Set a new password
+ *
+ * Uses a reset link's token (once) to set the password; it also verifies the email, and the account's other reset links stop working.
+ */
+export const resetPassword = <ThrowOnError extends boolean = false>(options: Options<ResetPasswordData, ThrowOnError>): RequestResult<ResetPasswordResponses, ResetPasswordErrors, ThrowOnError> => (options.client ?? client).post<ResetPasswordResponses, ResetPasswordErrors, ThrowOnError>({
+    url: '/v1/password/reset',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Who am I
  *
  * You, the tenant you act for (tenant_id), its plan, your scope and a key's namespaces.
@@ -81,7 +134,7 @@ export const listKeys = <ThrowOnError extends boolean = false>(options?: Options
 /**
  * Make an API key
  *
- * The key is in the answer only. Scopes: read: list namespaces, search, count, get documents, warm, SQL, usage. write: also create and delete namespaces, write, update, delete and import documents. admin: also make, list, change and revoke keys, and billing. Only an admin key without namespace limits or caps (or the owner's login) can manage keys, so a read or write key can't make more.
+ * The key is in the answer only. Scopes: read: list namespaces, search, count, get documents, warm, SQL, usage. write: also create and delete namespaces and views, write, update, delete and import documents. admin: also make, list, change and revoke keys, and billing. Only an admin key without namespace limits or caps (or the owner's login) can manage keys, so a read or write key can't make more.
  */
 export const createKey = <ThrowOnError extends boolean = false>(options: Options<CreateKeyData, ThrowOnError>): RequestResult<CreateKeyResponses, CreateKeyErrors, ThrowOnError> => (options.client ?? client).post<CreateKeyResponses, CreateKeyErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -110,6 +163,43 @@ export const revokeKey = <ThrowOnError extends boolean = false>(options: Options
 export const setKeyLimits = <ThrowOnError extends boolean = false>(options: Options<SetKeyLimitsData, ThrowOnError>): RequestResult<SetKeyLimitsResponses, SetKeyLimitsErrors, ThrowOnError> => (options.client ?? client).put<SetKeyLimitsResponses, SetKeyLimitsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v1/keys/{id}/limits',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List embedding keys
+ *
+ * The tenant's own provider keys SkimmerDB embeds with (bring your own key): which providers, and a hint of each key. Needs an admin key without namespace limits or caps, or the owner's login (as managing API keys).
+ */
+export const listEmbeddingKeys = <ThrowOnError extends boolean = false>(options?: Options<ListEmbeddingKeysData, ThrowOnError>): RequestResult<ListEmbeddingKeysResponses, ListEmbeddingKeysErrors, ThrowOnError> => (options?.client ?? client).get<ListEmbeddingKeysResponses, ListEmbeddingKeysErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/embedding-keys',
+    ...options
+});
+
+/**
+ * Delete an embedding key
+ *
+ * Forgets the tenant's key for a provider at once. Writes that need it (text without vectors in a namespace with that provider's model) and semantic searches then answer 422 embedding_key_missing. Needs an admin key without namespace limits or caps, or the owner's login (as managing API keys).
+ */
+export const deleteEmbeddingKey = <ThrowOnError extends boolean = false>(options: Options<DeleteEmbeddingKeyData, ThrowOnError>): RequestResult<DeleteEmbeddingKeyResponses, DeleteEmbeddingKeyErrors, ThrowOnError> => (options.client ?? client).delete<DeleteEmbeddingKeyResponses, DeleteEmbeddingKeyErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/embedding-keys/{provider}',
+    ...options
+});
+
+/**
+ * Store an embedding key
+ *
+ * Stores (or replaces) the tenant's key for a provider (openai, voyage, gemini or cohere), after checking it with the provider (one tiny embedding with its default model, billed by the provider). Kept encrypted; never shown again. Namespaces with an embedding model (embed) then embed documents' text and semantic searches with it; the provider bills the tenant, SkimmerDB counts the tokens (usage.embed_tokens) and charges nothing for them. Needs an admin key without namespace limits or caps, or the owner's login (as managing API keys).
+ */
+export const setEmbeddingKey = <ThrowOnError extends boolean = false>(options: Options<SetEmbeddingKeyData, ThrowOnError>): RequestResult<SetEmbeddingKeyResponses, SetEmbeddingKeyErrors, ThrowOnError> => (options.client ?? client).put<SetEmbeddingKeyResponses, SetEmbeddingKeyErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/embedding-keys/{provider}',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -245,6 +335,21 @@ export const getNamespace = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 /**
+ * Change a namespace's embedding model
+ *
+ * Sets, changes or removes the model documents' text is embedded with (the tenant's own provider key; see Embeddings). A namespace's vector length is fixed: the model must make vectors of it (409 embedding_dims otherwise, and for a namespace made without vectors). Documents already written keep their vectors.
+ */
+export const updateNamespace = <ThrowOnError extends boolean = false>(options: Options<UpdateNamespaceData, ThrowOnError>): RequestResult<UpdateNamespaceResponses, UpdateNamespaceErrors, ThrowOnError> => (options.client ?? client).patch<UpdateNamespaceResponses, UpdateNamespaceErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/namespaces/{name}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Update documents
  *
  * Text replaced if given, meta merged key by key (null removes a key), the vector kept unless a new one is given. The documents must exist. Metered as documents written and bytes written (see Usage).
@@ -262,7 +367,7 @@ export const updateDocuments = <ThrowOnError extends boolean = false>(options: O
 /**
  * Write documents
  *
- * Put (insert or replace) and delete in one request. Answers once the write is stored in object storage (about 250 ms); searchable on this server at once, everywhere within a second; wait: true answers once it's searchable here. A namespace that doesn't exist is made by the write (created: true in the answer): with vectors of the first vector's length and cosine when the documents have vectors, else text only (create it first for euclidean); past the plan's namespace count, 402 namespace_limit. Metered as documents written and bytes written (see Usage).
+ * Put (insert or replace) and delete in one request. Answers once the write is stored in object storage (about 250 ms); searchable on this server at once, everywhere within a second; wait: true answers once it's searchable here. A namespace that doesn't exist is made by the write (created: true in the answer): with vectors of the first vector's length and cosine when the documents have vectors, else text only (create it first for euclidean); past the plan's namespace count, 402 namespace_limit. Metered as documents written and bytes written (see Usage). With Content-Type application/x-ndjson the body is one document a line (up to 16 MB; any length: POST .../docs/stream).
  */
 export const writeDocuments = <ThrowOnError extends boolean = false>(options: Options<WriteDocumentsData, ThrowOnError>): RequestResult<WriteDocumentsResponses, WriteDocumentsErrors, ThrowOnError> => (options.client ?? client).post<WriteDocumentsResponses, WriteDocumentsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -270,6 +375,21 @@ export const writeDocuments = <ThrowOnError extends boolean = false>(options: Op
     ...options,
     headers: {
         'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Stream documents in (NDJSON)
+ *
+ * Any number of documents in one request: one a line ({"id", "text", "meta", "vector"}, as in docs), read as it arrives and written in batches of 50,000 documents (or 16 MB) through the ordinary write path (limits, embedding, metering; the namespace made on the first batch). When the namespace's log can't keep up the stream is slowed (the body isn't read), not refused. Each batch is atomic, the stream isn't: an error stops it and the answer (or the error, with written) says how many were written before it; writes are by id, so sending it again is safe. Memory on the server: one batch. Metered as documents written and bytes written (see Usage).
+ */
+export const writeDocumentStream = <ThrowOnError extends boolean = false>(options: Options<WriteDocumentStreamData, ThrowOnError>): RequestResult<WriteDocumentStreamResponses, WriteDocumentStreamErrors, ThrowOnError> => (options.client ?? client).post<WriteDocumentStreamResponses, WriteDocumentStreamErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/namespaces/{name}/docs/stream',
+    ...options,
+    headers: {
+        'Content-Type': 'application/x-ndjson',
         ...options.headers
     }
 });
@@ -301,7 +421,7 @@ export const getDocument = <ThrowOnError extends boolean = false>(options: Optio
 /**
  * Bulk import a file
  *
- * CSV, NDJSON or Parquet as the request body (up to 2 GB and 1M rows), parsed straight into one segment: all rows become visible together, or none. A namespace that doesn't exist is made by the import (text only; created: true). Metered as a write of that many documents and the file's bytes.
+ * CSV, NDJSON or Parquet as the request body, or fetched from ?url= (https only: a presigned S3 / GCS URL or any public server; private, loopback, link-local and metadata addresses are refused, after redirects too), up to 2 GB, parsed straight into columns, in segments of up to 1M rows: all rows become visible together, or none. A namespace that doesn't exist is made by the import (text only; created: true). Metered as a write of that many documents and the file's bytes.
  */
 export const importRows = <ThrowOnError extends boolean = false>(options: Options<ImportRowsData, ThrowOnError>): RequestResult<ImportRowsResponses, ImportRowsErrors, ThrowOnError> => (options.client ?? client).post<ImportRowsResponses, ImportRowsErrors, ThrowOnError>({
     bodySerializer: null,
@@ -310,6 +430,36 @@ export const importRows = <ThrowOnError extends boolean = false>(options: Option
     ...options,
     headers: {
         'Content-Type': 'application/octet-stream',
+        ...options.headers
+    }
+});
+
+/**
+ * Import files from your bucket
+ *
+ * CSV, NDJSON or Parquet files read straight from your own bucket: AWS S3, or an S3-compatible service (Cloudflare R2, Backblaze B2, MinIO, Wasabi, Google Cloud Storage) given as s3.endpoint. One key, every file under a prefix, or a pattern (*.parquet), in key order: up to 100 files and 4 GB a request, each file up to 2 GB; next says where to go on (pass it as after). Each file is an import of its own (all its rows visible together); a failure stops the request and answers what was imported, the failing key (failed) and next. The keys are used for this request only, never stored; the endpoint's host must resolve to a public address. A namespace that doesn't exist is made (text only; created: true). Metered as writes of the documents and the files' bytes.
+ */
+export const importBucket = <ThrowOnError extends boolean = false>(options: Options<ImportBucketData, ThrowOnError>): RequestResult<ImportBucketResponses, ImportBucketErrors, ThrowOnError> => (options.client ?? client).post<ImportBucketResponses, ImportBucketErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/namespaces/{name}/import/bucket',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Sync a DuckLake table
+ *
+ * Keeps a table of your DuckLake (catalog in Postgres, data in your S3 bucket on AWS or an S3-compatible service such as R2 or MinIO) in the namespace, nothing copied by you: every live row a document (its id the key column's value; its text the text columns; its metadata the other columns and _rowid, the DuckLake row id). Each sync reads the catalog at a snapshot and writes only what changed since the snapshot synced before (inserts, updates, deletes, inlined rows, compactions); a change to the table's columns resyncs it whole. Run it after the lake's commits. The catalog URL and S3 keys are used for the sync only and never stored; the catalog's host must resolve to a public address. A namespace that doesn't exist is made (text only; created: true). Metered as writes of the documents upserted and deleted.
+ */
+export const syncLake = <ThrowOnError extends boolean = false>(options: Options<SyncLakeData, ThrowOnError>): RequestResult<SyncLakeResponses, SyncLakeErrors, ThrowOnError> => (options.client ?? client).post<SyncLakeResponses, SyncLakeErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/namespaces/{name}/lake/sync',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
         ...options.headers
     }
 });
@@ -382,9 +532,20 @@ export const warmNamespace = <ThrowOnError extends boolean = false>(options: Opt
 });
 
 /**
+ * SQL over a namespace, by URL (beta)
+ *
+ * Beta. As POST /v1/namespaces/{name}/sql. The same query as a GET, for clients that can only fetch a URL: DuckDB's read_csv / read_json over https (with a CREATE SECRET of TYPE http and BEARER_TOKEN), curl, a spreadsheet's import. The SQL goes in ?sql= (URL-encoded; DuckDB reads a * in a URL as a glob: write %2A). Reads only: SQL that writes answers 405.
+ */
+export const querySqlGet = <ThrowOnError extends boolean = false>(options: Options<QuerySqlGetData, ThrowOnError>): RequestResult<QuerySqlGetResponses, QuerySqlGetErrors, ThrowOnError> => (options.client ?? client).get<QuerySqlGetResponses, QuerySqlGetErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/namespaces/{name}/sql',
+    ...options
+});
+
+/**
  * SQL over a namespace (beta)
  *
- * Beta: the dialect may grow. One SELECT ... FROM docs over the documents' metadata (columns: id and every top-level meta key; SHOW COLUMNS lists them), with contains(text, '...') and grep(text, 'regex') through the text index. WHERE, GROUP BY, HAVING, ORDER BY, LIMIT/OFFSET, COUNT, COUNT(DISTINCT), SUM, AVG, MIN, MAX, LENGTH, DATE_TRUNC, REGEXP_REPLACE, CASE WHEN; no joins or subqueries. A time limit per plan (10 s free, 30 s pro) and SQL queries in flight per tenant (2 free, 8 pro; 429 past it). Errors in the SQL are 422 with the reason; 413 when it would read too much. Counts as one query (metered; see Usage).
+ * Beta: the dialect may grow. A query over the namespace's documents as the table docs; the tenant's other namespaces are tables too, by name (quoted when it has - or .: "web-logs"), so it can join them. A key limited to some namespaces sees no others. Columns: id and every top-level meta key, typed from the values: int (booleans 1/0), float, text, date or time; missing is NULL; SHOW COLUMNS lists a namespace's. contains(text, '...') and grep(text, 'regex') go through the text index (in WHERE, on one table: contains(e.text, ...) when there are several). SELECT, WITH, UNION / INTERSECT / EXCEPT [ALL]; joins (INNER, LEFT, RIGHT, FULL, CROSS, USING, NATURAL); subqueries (IN, EXISTS, scalar, in FROM; correlated as [NOT] EXISTS / IN with = conditions); GROUP BY (ROLLUP, CUBE, GROUPING SETS), HAVING, QUALIFY, DISTINCT, ORDER BY, LIMIT / OFFSET; window functions (ROW_NUMBER, RANK, DENSE_RANK, NTILE, PERCENT_RANK, CUME_DIST, LAG, LEAD, FIRST_VALUE, LAST_VALUE, NTH_VALUE, aggregates OVER (PARTITION BY ... ORDER BY ... ROWS BETWEEN ...)); aggregates COUNT, COUNT(DISTINCT), SUM, AVG, MIN, MAX, STDDEV, VARIANCE, MEDIAN, QUANTILE, PERCENTILE_CONT / _DISC, MODE, STRING_AGG, ARG_MIN / ARG_MAX, BOOL_AND / BOOL_OR, COUNT_IF, CORR, with FILTER (WHERE ...); + - * / (a float; NULL dividing by 0) // %; CASE, COALESCE, NULLIF, CAST / TRY_CAST, text, math and date functions (LOWER, SUBSTRING, CONCAT, ||, REPLACE, SPLIT_PART, REGEXP_*, ROUND, EXTRACT, DATE_TRUNC, DATE_DIFF, INTERVAL, STRFTIME, ...). LENGTH counts bytes, CHAR_LENGTH characters. A query reads at most 16 tables; JSON answers stop at 10,000 rows (truncated): format=ndjson or csv (or Accept: application/x-ndjson / text/csv) streams every row instead (a plain scan of one namespace any number, window by window; other shapes up to their row cap, then a last too_many_rows line and a broken transfer), and POST /v1/sql/exports writes an answer to a file. Writes (write scope): INSERT INTO ns [(columns)] VALUES (...) | SELECT ..., CREATE TABLE ns AS SELECT ..., DELETE FROM ns [WHERE ...]; a row's id column names the document (an existing id is replaced), its text column is its text, the rest metadata; each statement is one commit (all rows or none; a DELETE removes at most 1,000,000), metered as writes, and the answer has dml. Reference: https://docs.skimmerdb.com/reference/sql. A time limit per plan (10 s free, 30 s pro) and SQL queries in flight per tenant (2 free, 8 pro; 429 past it). Errors in the SQL are 422 with the reason; 413 when it would read too much. One query is metered, however many namespaces it reads. Counts as one query (metered; see Usage).
  */
 export const querySql = <ThrowOnError extends boolean = false>(options: Options<QuerySqlData, ThrowOnError>): RequestResult<QuerySqlResponses, QuerySqlErrors, ThrowOnError> => (options.client ?? client).post<QuerySqlResponses, QuerySqlErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -394,6 +555,126 @@ export const querySql = <ThrowOnError extends boolean = false>(options: Options<
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+/**
+ * SQL across namespaces, by URL (beta)
+ *
+ * Beta. As POST /v1/sql. The same query as a GET, for clients that can only fetch a URL: DuckDB's read_csv / read_json over https (with a CREATE SECRET of TYPE http and BEARER_TOKEN), curl, a spreadsheet's import. The SQL goes in ?sql= (URL-encoded; DuckDB reads a * in a URL as a glob: write %2A). Reads only: SQL that writes answers 405.
+ */
+export const querySqlTenantGet = <ThrowOnError extends boolean = false>(options?: Options<QuerySqlTenantGetData, ThrowOnError>): RequestResult<QuerySqlTenantGetResponses, QuerySqlTenantGetErrors, ThrowOnError> => (options?.client ?? client).get<QuerySqlTenantGetResponses, QuerySqlTenantGetErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/sql',
+    ...options
+});
+
+/**
+ * SQL across namespaces (beta)
+ *
+ * Beta. A query whose tables are the tenant's namespaces, each by name (quoted when it has - or .: "web-logs"); no table is docs here. A key limited to some namespaces sees only those: any other name is no table, like one nobody has. Columns: id and every top-level meta key, typed from the values: int (booleans 1/0), float, text, date or time; missing is NULL; SHOW COLUMNS lists a namespace's. contains(text, '...') and grep(text, 'regex') go through the text index (in WHERE, on one table: contains(e.text, ...) when there are several). SELECT, WITH, UNION / INTERSECT / EXCEPT [ALL]; joins (INNER, LEFT, RIGHT, FULL, CROSS, USING, NATURAL); subqueries (IN, EXISTS, scalar, in FROM; correlated as [NOT] EXISTS / IN with = conditions); GROUP BY (ROLLUP, CUBE, GROUPING SETS), HAVING, QUALIFY, DISTINCT, ORDER BY, LIMIT / OFFSET; window functions (ROW_NUMBER, RANK, DENSE_RANK, NTILE, PERCENT_RANK, CUME_DIST, LAG, LEAD, FIRST_VALUE, LAST_VALUE, NTH_VALUE, aggregates OVER (PARTITION BY ... ORDER BY ... ROWS BETWEEN ...)); aggregates COUNT, COUNT(DISTINCT), SUM, AVG, MIN, MAX, STDDEV, VARIANCE, MEDIAN, QUANTILE, PERCENTILE_CONT / _DISC, MODE, STRING_AGG, ARG_MIN / ARG_MAX, BOOL_AND / BOOL_OR, COUNT_IF, CORR, with FILTER (WHERE ...); + - * / (a float; NULL dividing by 0) // %; CASE, COALESCE, NULLIF, CAST / TRY_CAST, text, math and date functions (LOWER, SUBSTRING, CONCAT, ||, REPLACE, SPLIT_PART, REGEXP_*, ROUND, EXTRACT, DATE_TRUNC, DATE_DIFF, INTERVAL, STRFTIME, ...). LENGTH counts bytes, CHAR_LENGTH characters. A query reads at most 16 tables; JSON answers stop at 10,000 rows (truncated): format=ndjson or csv (or Accept: application/x-ndjson / text/csv) streams every row instead (a plain scan of one namespace any number, window by window; other shapes up to their row cap, then a last too_many_rows line and a broken transfer), and POST /v1/sql/exports writes an answer to a file. Writes (write scope): INSERT INTO ns [(columns)] VALUES (...) | SELECT ..., CREATE TABLE ns AS SELECT ..., DELETE FROM ns [WHERE ...]; a row's id column names the document (an existing id is replaced), its text column is its text, the rest metadata; each statement is one commit (all rows or none; a DELETE removes at most 1,000,000), metered as writes, and the answer has dml. Reference: https://docs.skimmerdb.com/reference/sql. A time limit per plan (10 s free, 30 s pro) and SQL queries in flight per tenant (2 free, 8 pro; 429 past it). Errors in the SQL are 422 with the reason; 413 when it would read too much. One query is metered, however many namespaces it reads. Counts as one query (metered; see Usage).
+ */
+export const querySqlTenant = <ThrowOnError extends boolean = false>(options: Options<QuerySqlTenantData, ThrowOnError>): RequestResult<QuerySqlTenantResponses, QuerySqlTenantErrors, ThrowOnError> => (options.client ?? client).post<QuerySqlTenantResponses, QuerySqlTenantErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/sql',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List a namespace's views
+ *
+ * A view is a SQL query over one namespace (FROM docs) whose answer is kept as partials per segment: COUNT, SUM, MIN, MAX, AVG, COUNT(DISTINCT ...), COUNT_IF and f(...) FILTER (WHERE ...) over any WHERE, GROUP BY any expressions (DATE_TRUNC buckets, CASE, ...), with HAVING, ORDER BY and LIMIT applied on top. Name it as a table in SQL (SELECT * FROM daily_signups, or join it). It is always exact: a segment's partial is reused only while that segment's visible rows are the ones it was computed from, so a write or delete recomputes only the segments it touched. Views go with their namespace.
+ */
+export const listViews = <ThrowOnError extends boolean = false>(options: Options<ListViewsData, ThrowOnError>): RequestResult<ListViewsResponses, ListViewsErrors, ThrowOnError> => (options.client ?? client).get<ListViewsResponses, ListViewsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/namespaces/{name}/views',
+    ...options
+});
+
+/**
+ * Create a view
+ *
+ * A view is a SQL query over one namespace (FROM docs) whose answer is kept as partials per segment: COUNT, SUM, MIN, MAX, AVG, COUNT(DISTINCT ...), COUNT_IF and f(...) FILTER (WHERE ...) over any WHERE, GROUP BY any expressions (DATE_TRUNC buckets, CASE, ...), with HAVING, ORDER BY and LIMIT applied on top. Name it as a table in SQL (SELECT * FROM daily_signups, or join it). It is always exact: a segment's partial is reused only while that segment's visible rows are the ones it was computed from, so a write or delete recomputes only the segments it touched. Views go with their namespace. Its name is the tenant's (not a namespace's name, not docs). Creating one runs it once (metered as a query) and answers its columns. A query that can't run from parts is refused with 422 view_not_decomposable and the reason; past the plan's views, 402 view_limit.
+ */
+export const createView = <ThrowOnError extends boolean = false>(options: Options<CreateViewData, ThrowOnError>): RequestResult<CreateViewResponses, CreateViewErrors, ThrowOnError> => (options.client ?? client).post<CreateViewResponses, CreateViewErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/namespaces/{name}/views',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete a view
+ *
+ * Its kept partials go with the segments they describe.
+ */
+export const deleteView = <ThrowOnError extends boolean = false>(options: Options<DeleteViewData, ThrowOnError>): RequestResult<DeleteViewResponses, DeleteViewErrors, ThrowOnError> => (options.client ?? client).delete<DeleteViewResponses, DeleteViewErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/namespaces/{name}/views/{view}',
+    ...options
+});
+
+/**
+ * Get a view
+ */
+export const getView = <ThrowOnError extends boolean = false>(options: Options<GetViewData, ThrowOnError>): RequestResult<GetViewResponses, GetViewErrors, ThrowOnError> => (options.client ?? client).get<GetViewResponses, GetViewErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/namespaces/{name}/views/{view}',
+    ...options
+});
+
+/**
+ * List exports (beta)
+ *
+ * The tenant's exports not expired, newest first (the last 100). A key limited to namespaces sees only its own.
+ */
+export const listExports = <ThrowOnError extends boolean = false>(options?: Options<ListExportsData, ThrowOnError>): RequestResult<ListExportsResponses, ListExportsErrors, ThrowOnError> => (options?.client ?? client).get<ListExportsResponses, ListExportsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/sql/exports',
+    ...options
+});
+
+/**
+ * Export a query's answer (beta)
+ *
+ * For answers too big or too slow for a request: the query runs in the background (the plan's export_seconds: 60 s free, 900 s pro) and its rows are written as CSV, NDJSON or Parquet into object storage under the tenant's own prefix, kept 24 hours, or, with destination, delivered to the tenant's own bucket (AWS S3, R2, B2, MinIO, ...) by multipart upload and not kept here (its bytes count as bytes returned). A plain scan of one namespace exports any number of rows; other shapes up to their row cap. Poll GET /v1/sql/exports/{id}; download when done. Limits: exports queued or running at once (1 free, 2 pro; 429), exports a UTC day (10 free; 402 export_limit), an export's size (1 GB free, 50 GB pro; failed past it). Metered: one query when it runs; downloads as bytes returned. A server that restarts fails its running exports (run them again).
+ */
+export const createExport = <ThrowOnError extends boolean = false>(options: Options<CreateExportData, ThrowOnError>): RequestResult<CreateExportResponses, CreateExportErrors, ThrowOnError> => (options.client ?? client).post<CreateExportResponses, CreateExportErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/sql/exports',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * An export's status (beta)
+ *
+ * queued, running (rows and bytes so far), done (download), failed (error) or expired.
+ */
+export const getExport = <ThrowOnError extends boolean = false>(options: Options<GetExportData, ThrowOnError>): RequestResult<GetExportResponses, GetExportErrors, ThrowOnError> => (options.client ?? client).get<GetExportResponses, GetExportErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/sql/exports/{id}',
+    ...options
+});
+
+/**
+ * Download an export (beta)
+ *
+ * The file, streamed (Content-Type text/csv, application/x-ndjson or application/vnd.apache.parquet; X-Skimmerdb-Size: its size). Resumable: Range: bytes=first-last (one range) answers 206 with Content-Range. Metered as bytes returned; on the free plan a download stops when they're used up (a range past them: 402).
+ */
+export const downloadExport = <ThrowOnError extends boolean = false>(options: Options<DownloadExportData, ThrowOnError>): RequestResult<DownloadExportResponses, DownloadExportErrors, ThrowOnError> => (options.client ?? client).get<DownloadExportResponses, DownloadExportErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v1/sql/exports/{id}/download',
+    ...options
 });
 
 /**
@@ -421,7 +702,7 @@ export const getSidecar = <ThrowOnError extends boolean = false>(options: Option
 /**
  * MCP endpoint (Streamable HTTP)
  *
- * For Claude, ChatGPT, Codex, Cursor and other agents: JSON-RPC 2.0 (initialize, tools/list, tools/call). Tools: list_namespaces, create_namespace, delete_namespace, write_documents, delete_documents, search, sql_query, count, get_document, warm_namespace; each runs the same code, limits and metering as its REST call (metered apart as mcp_queries / mcp_writes). Agents sign in with OAuth 2.1 (discovery from the 401's WWW-Authenticate, dynamic registration, PKCE); API keys work too. Connect: claude mcp add --transport http skimmerdb https://api.skimmerdb.com/mcp (https://skimmerdb.com/mcp is the same endpoint).
+ * For Claude, ChatGPT, Codex, Cursor and other agents: JSON-RPC 2.0 (initialize, tools/list, tools/call). Tools: list_namespaces, create_namespace, delete_namespace, write_documents, delete_documents, search, sql_query, create_view, list_views, delete_view, count, get_document, warm_namespace; each runs the same code, limits and metering as its REST call (metered apart as mcp_queries / mcp_writes). Agents sign in with OAuth 2.1 (discovery from the 401's WWW-Authenticate, dynamic registration, PKCE); API keys work too. Connect: claude mcp add --transport http skimmerdb https://api.skimmerdb.com/mcp (https://skimmerdb.com/mcp is the same endpoint).
  */
 export const mcp = <ThrowOnError extends boolean = false>(options: Options<McpData, ThrowOnError>): RequestResult<McpResponses, McpErrors, ThrowOnError> => (options.client ?? client).post<McpResponses, McpErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

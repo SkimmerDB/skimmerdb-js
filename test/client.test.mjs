@@ -84,3 +84,18 @@ test('errors and the generated layer', opts, async () => {
 	const { data } = await search({ client: db.client, path: { name: 'support' }, body: { q: 'refund' } });
 	assert.deepEqual(data.hits.map((h) => h.id), ['t-1']);
 });
+
+test('streams and exports', opts, async () => {
+	const ns = db.namespace('bulk');
+	const docs = Array.from({ length: 12000 }, (_, i) => ({ id: `b-${i}`, text: `row ${i}`, meta: { n: i } }));
+	const w = await ns.writeStream(docs, { wait: true });
+	assert.equal(w.written, 12000);
+	let n = 0;
+	for await (const row of ns.sqlRows('SELECT id, n FROM docs')) n += row.n >= 0 ? 1 : 0;
+	assert.equal(n, 12000);
+	const e = await db.waitExport((await db.export('SELECT id FROM bulk WHERE n < 5000', 'csv')).id);
+	const text = await (await db.downloadExport(e.id)).text();
+	assert.equal(text.trim().split('\r\n').length, 5001);
+	assert.equal((await (await db.downloadExport(e.id, 5)).text()).length, e.bytes - 5);
+	await assert.rejects(async () => { for await (const _ of ns.sqlRows('SELECT nope FROM docs')) {} }, (x) => x.status === 422);
+});

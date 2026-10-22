@@ -3,24 +3,52 @@
 	"version": "0.1.0",
 	"description": "TypeScript client for SkimmerDB: memory, search and analytics for AI agents on S3. Exact and regex search, filters, vectors, SQL.",
 	"license": "MIT",
-	"homepage": "https://skimmerdb.com/docs",
-	"repository": { "type": "git", "url": "git+https://github.com/SkimmerDB/skimmerdb-js.git" },
-	"bugs": { "url": "https://github.com/SkimmerDB/skimmerdb-js/issues" },
-	"keywords": ["agent memory", "ai agents", "search", "vector search", "database", "sql", "mcp", "s3", "skimmerdb"],
+	"homepage": "https://docs.skimmerdb.com",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/SkimmerDB/skimmerdb-js.git"
+	},
+	"bugs": {
+		"url": "https://github.com/SkimmerDB/skimmerdb-js/issues"
+	},
+	"keywords": [
+		"agent memory",
+		"ai agents",
+		"search",
+		"vector search",
+		"database",
+		"sql",
+		"mcp",
+		"s3",
+		"skimmerdb"
+	],
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"exports": {
-		".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-		"./api": { "types": "./dist/api/index.d.ts", "default": "./dist/api/index.js" }
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./api": {
+			"types": "./dist/api/index.d.ts",
+			"default": "./dist/api/index.js"
+		}
 	},
-	"files": ["dist", "README.md", "LICENSE"],
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
 	"author": "SkimmerDB",
-	"engines": { "node": ">=18" },
+	"engines": {
+		"node": ">=18"
+	},
 	"scripts": {
 		"generate": "openapi-ts",
 		"build": "tsc -p tsconfig.json",
-		"test": "npm run build && node --test test/*.test.mjs"
+		"test": "npm run typecheck && npm run build && node --test test/*.test.mjs",
+		"typecheck": "tsc -p tsconfig.json --noEmit && tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck test/types.check.ts"
 	},
 	"devDependencies": {
 		"@hey-api/openapi-ts": "0.99.0",

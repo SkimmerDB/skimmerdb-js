@@ -23,6 +23,63 @@ export type Billing = {
     usage: Usage;
 };
 
+export type BucketImportFile = {
+    key: string;
+    bytes: number;
+    rows: number;
+    written: number;
+};
+
+/**
+ * Files in the tenant's bucket to import.
+ */
+export type BucketImportRequest = {
+    /**
+     * s3://bucket/key (one file), s3://bucket/prefix/ (every file under it) or s3://bucket/prefix*.parquet (those ending as the pattern after the *).
+     */
+    path: string;
+    /**
+     * Empty: from each file's extension (.csv, .ndjson / .jsonl / .json, .parquet).
+     */
+    format?: '' | 'csv' | 'ndjson' | 'parquet';
+    /**
+     * The column holding document ids (default: row numbers).
+     */
+    id?: string;
+    /**
+     * Columns to index as text.
+     */
+    text?: Array<string>;
+    /**
+     * CSV: a CREATE TABLE giving the columns' types.
+     */
+    schema?: string;
+    /**
+     * Only keys after this one (a previous answer's next).
+     */
+    after?: string;
+    s3: S3Keys;
+};
+
+export type BucketImportResult = {
+    /**
+     * The files imported, in order (each committed on its own).
+     */
+    files: Array<BucketImportFile>;
+    written: number;
+    rows: number;
+    bytes: number;
+    /**
+     * More files remain: pass this as after. Empty: done.
+     */
+    next: string;
+    took_ms: number;
+    /**
+     * The namespace didn't exist: this import made it (text only).
+     */
+    created: boolean;
+};
+
 export type CountRequest = {
     q?: string;
     regex?: boolean;
@@ -76,6 +133,10 @@ export type CreateNamespace = {
      * Give the namespace vectors (fixed for its life). Leave out for text only.
      */
     vector?: VectorConfig;
+    /**
+     * Embed documents' text with a model and the tenant's own key: the namespace gets vectors of the model's length.
+     */
+    embed?: EmbedConfig;
 };
 
 export type DeleteRequest = {
@@ -85,15 +146,15 @@ export type DeleteRequest = {
 
 export type Document = {
     /**
-     * Any string up to 512 bytes, one line. Writing an id again replaces the document.
+     * Any string up to 512 bytes, one line (slashes allowed). Writing an id again replaces the document, so use a stable natural key (ticket-1042, docs/install.md#3, agent-1/run-42/step-3): retries are then safe.
      */
     id: string;
     /**
-     * Up to 2 MB. May be left out when the document has a vector.
+     * What q searches (exact text and regex): up to 2 MB. May be left out when the document has a vector.
      */
     text?: string;
     /**
-     * Metadata: a JSON object of strings, numbers and booleans you can filter on (up to 16 KB).
+     * Metadata: a JSON object of strings, numbers and booleans you filter, group and sort by (up to 16 KB); its top-level keys are SQL columns. Keep it flat (nested objects and arrays can't be filtered), one type per key, times as integer seconds (ranges and DATE_TRUNC need numbers). Not searched by q: put searchable words in text.
      */
     meta?: {
         [key: string]: unknown;
@@ -127,6 +188,48 @@ export type DocumentPatch = {
 };
 
 /**
+ * Documents written with text and no vector are embedded with this model (with the tenant's own provider key, or hosted); search takes semantic.
+ */
+export type EmbedConfig = {
+    /**
+     * openai, voyage, gemini or cohere: with the tenant's own key for it (PUT /v1/embedding-keys/{provider}; the provider bills the tenant, SkimmerDB charges nothing). skimmerdb: hosted, SkimmerDB embeds with voyage-3.5-lite at Voyage's price, no margin (metered as embed_tokens; the free plan includes some).
+     */
+    provider: 'openai' | 'voyage' | 'gemini' | 'cohere' | 'skimmerdb';
+    /**
+     * The provider's embedding model (default: text-embedding-3-small for openai, voyage-3.5-lite for voyage and skimmerdb, gemini-embedding-001 for gemini, embed-v4.0 for cohere). skimmerdb takes voyage-3.5-lite only.
+     */
+    model?: string;
+    /**
+     * At creation: the vectors' length to ask the model for (default: the model's own, up to 2,048). Models that make several lengths (OpenAI's text-embedding-3, Voyage's 3.5, Gemini's, Cohere's embed-v4.0) take it.
+     */
+    dims?: number;
+};
+
+export type EmbeddingKey = {
+    /**
+     * openai or voyage.
+     */
+    provider: string;
+    /**
+     * The key's first and last characters: the key itself is never shown again.
+     */
+    hint: string;
+    created_at: string;
+    updated_at: string;
+};
+
+export type EmbeddingKeyList = {
+    keys: Array<EmbeddingKey>;
+};
+
+export type EmbeddingKeyRequest = {
+    /**
+     * The provider's API key. Checked with the provider (one tiny embedding), then stored encrypted; never shown again.
+     */
+    key: string;
+};
+
+/**
  * Every error answer, whatever the status.
  */
 export type Error = {
@@ -135,7 +238,7 @@ export type Error = {
      */
     error: string;
     /**
-     * A word to act on. By status: bad_request (400), unauthorized (401), payment_required (402), forbidden (403), not_found (404), conflict (409), too_large (413), invalid (422; fields says which), rate_limited (429), internal (500), not_implemented (501), bad_gateway (502), unavailable (503), quota_full (507). More precise ones: namespace_limit (402: the plan's namespace count), query_timeout (422: past the plan's time limit), scan_refused (422: a regex the index can't narrow on a big namespace; send scan: true), write_busy (429: writes arrive faster than the namespace commits them; nothing was written), write_unknown (503: the write may or may not have been applied; retrying is safe).
+     * A word to act on. By status: bad_request (400), unauthorized (401), payment_required (402), forbidden (403), not_found (404), conflict (409), gone (410), too_large (413), range_not_satisfiable (416), invalid (422; fields says which), rate_limited (429), internal (500), not_implemented (501), bad_gateway (502), unavailable (503), quota_full (507). More precise ones: namespace_limit (402: the plan's namespace count, or its namespaces made today), email_unverified (402: a free tenant whose owner hasn't verified their email has 1% of the plan; verify it), query_timeout (422: past the plan's time limit), scan_refused (422: a regex the index can't narrow on a big namespace; send scan: true), write_busy (429: writes arrive faster than the namespace commits them; nothing was written), out_budget (a streamed answer's last NDJSON line: the free plan's bytes returned ran out), too_many_rows (a streamed answer's last NDJSON line: a held answer passed its row cap), export_limit (402: the plan's exports a day), write_unknown (503: the write may or may not have been applied; retrying is safe), embedding_key_missing (422: the namespace embeds with a provider the tenant has no key for), payment_required (402: also the free plan's hosted embedding tokens), embedding_key_invalid (422: the provider refused the tenant's key), embedding_rejected (422: the provider refused the request, e.g. an unknown model), embedding_dims (409: the model can't make vectors of the namespace's length), embedding_rate_limited (429: the provider is rate-limiting the tenant's key; retry_after), embedding_failed (502: the provider failed; nothing was written, retry), view_not_decomposable (422: a view's query can't run from per-segment parts; the message says why), view_limit (402: the plan's view count; 422: a namespace's 20).
      */
     code: string;
     /**
@@ -148,6 +251,66 @@ export type Error = {
      * write_busy: seconds to wait (as Retry-After).
      */
     retry_after?: number;
+};
+
+export type Export = {
+    id: string;
+    status: 'queued' | 'running' | 'done' | 'failed' | 'expired';
+    format: string;
+    sql: string;
+    /**
+     * Rows written so far (all, once done).
+     */
+    rows: number;
+    /**
+     * The file's size so far (all, once done).
+     */
+    bytes: number;
+    /**
+     * failed: why.
+     */
+    error: string;
+    created_at: string;
+    finished_at: string | null;
+    /**
+     * 24 hours after it was made: the file is deleted then.
+     */
+    expires_at: string;
+    /**
+     * done: where to download it.
+     */
+    download?: string;
+    /**
+     * Delivered to the tenant's bucket: the file's s3:// path (no download here).
+     */
+    destination?: string;
+};
+
+/**
+ * Deliver the file to the tenant's own bucket (AWS S3, R2, B2, MinIO, ...) by multipart upload instead of keeping it here. The keys are checked at once (a small object is written and deleted) and kept in memory only while the export runs.
+ */
+export type ExportDestination = {
+    /**
+     * s3://bucket/key for the file; ending in / a name is made (export-<time>.<format>).
+     */
+    path: string;
+    s3: S3Keys;
+};
+
+export type ExportList = {
+    exports: Array<Export>;
+};
+
+export type ExportRequest = {
+    /**
+     * A query (as POST /v1/sql: tables are the tenant's namespaces by name).
+     */
+    sql: string;
+    /**
+     * CSV (a header line, RFC 4180), NDJSON (an object a row) or Parquet (one file: row groups of up to 131,072 rows, ZSTD; every column nullable; int as INT64, float DOUBLE, text STRING, date DATE, time TIMESTAMP (microseconds, not UTC-adjusted), decimal DECIMAL(18, s)).
+     */
+    format?: 'csv' | 'ndjson' | 'parquet';
+    destination?: ExportDestination;
 };
 
 /**
@@ -255,7 +418,7 @@ export type KeyRequest = {
      */
     name?: string;
     /**
-     * read: list namespaces, search, count, get documents, warm, SQL, usage. write: also create and delete namespaces, write, update, delete and import documents. admin: also make, list, change and revoke keys, and billing. Only an admin key without namespace limits or caps (or the owner's login) can manage keys, so a read or write key can't make more.
+     * read: list namespaces, search, count, get documents, warm, SQL, usage. write: also create and delete namespaces and views, write, update, delete and import documents. admin: also make, list, change and revoke keys, and billing. Only an admin key without namespace limits or caps (or the owner's login) can manage keys, so a read or write key can't make more.
      */
     scope?: 'read' | 'write' | 'admin';
     /**
@@ -274,6 +437,75 @@ export type KeyRequest = {
      * Documents written or deleted a billing period (0: none).
      */
     cap_writes?: number;
+};
+
+/**
+ * A DuckLake table to keep in the namespace.
+ */
+export type LakeSyncRequest = {
+    /**
+     * The lake's catalog: a postgres:// URL (DuckLake's Postgres catalog), reachable at a public address. Used for this sync only, never stored.
+     */
+    catalog: string;
+    /**
+     * The table: name (schema main) or schema.name.
+     */
+    table: string;
+    /**
+     * The column whose value is a document's id. Default: id when the table has one, else the DuckLake row id; rowid: the row id.
+     */
+    key?: string;
+    /**
+     * Columns whose values are the searchable text (default: every text column).
+     */
+    text?: Array<string>;
+    /**
+     * The snapshot to sync to (-1: the latest). Never older than the one synced.
+     */
+    snapshot?: number;
+    /**
+     * Keys that can read the lake's data_path (s3://...), on AWS or the endpoint given. Used for this sync only, never stored.
+     */
+    s3: {
+        region: string;
+        access_key_id: string;
+        secret_access_key: string;
+        session_token?: string;
+        /**
+         * An S3-compatible service instead of AWS: an https URL of scheme, host and optional port, no path (requests are path-style). Cloudflare R2: <account>.r2.cloudflarestorage.com with region auto; also MinIO, Backblaze B2, Wasabi, Google Cloud Storage's XML API. Its host must resolve to a public address. Empty: AWS S3 in region.
+         */
+        endpoint?: string;
+    };
+};
+
+export type LakeSyncResult = {
+    /**
+     * The snapshot the namespace now holds.
+     */
+    snapshot: number;
+    /**
+     * The snapshot it held before (-1: none).
+     */
+    previous: number;
+    /**
+     * Every live row was written (the first sync, or the table's columns, key or text changed).
+     */
+    full: boolean;
+    upserted: number;
+    deleted: number;
+    /**
+     * The key column (empty: row ids).
+     */
+    key: string;
+    /**
+     * Columns not kept (nested types, blobs).
+     */
+    skipped: Array<string>;
+    took_ms: number;
+    /**
+     * The namespace didn't exist: this sync made it.
+     */
+    created: boolean;
 };
 
 export type LoginRequest = {
@@ -302,9 +534,14 @@ export type Me = {
     key_id: number;
     namespaces: Array<string>;
     is_admin: boolean;
+    /**
+     * false: until verified, a free tenant has 1% of the plan (plan shows what applies now).
+     */
+    email_verified: boolean;
 };
 
 export type Namespace = {
+    embed?: EmbedConfig;
     vector?: VectorConfig;
     name: string;
     /**
@@ -328,6 +565,13 @@ export type NamespaceList = {
      * Pass as after for the next page (empty: no more).
      */
     next: string;
+};
+
+export type NamespacePatch = {
+    /**
+     * Set or change the embedding model (it must make vectors of the namespace's length), or null to stop embedding.
+     */
+    embed: EmbedConfig | null;
 };
 
 export type NewKey = {
@@ -364,10 +608,25 @@ export type Plan = {
     sql_concurrency: number;
     query_seconds: number;
     max_namespaces: number;
+    included_cpu_seconds: number;
+    included_store_gets: number;
+    included_out_gb: number;
+    max_creates_day: number;
+    unverified_share: number;
+    max_views: number;
+    export_seconds: number;
+    export_concurrency: number;
+    exports_day: number;
+    export_max_gb: number;
 };
 
 export type RedirectUrl = {
     url: string;
+};
+
+export type ResendResult = {
+    verified: boolean;
+    sent: boolean;
 };
 
 export type ResourceMetadata = {
@@ -377,6 +636,23 @@ export type ResourceMetadata = {
     bearer_methods_supported: Array<string>;
     resource_name: string;
     resource_documentation: string;
+};
+
+/**
+ * Keys for the tenant's own bucket, on AWS S3 or an S3-compatible service. Used while the request (or export) runs, never stored. Without access_key_id and secret_access_key, requests go unsigned: a public bucket (such as AWS Open Data), for reading only.
+ */
+export type S3Keys = {
+    /**
+     * The bucket's region (auto for Cloudflare R2).
+     */
+    region?: string;
+    access_key_id?: string;
+    secret_access_key?: string;
+    session_token?: string;
+    /**
+     * An S3-compatible service instead of AWS: an https URL of scheme, host and optional port, no path (requests are path-style). Cloudflare R2: <account>.r2.cloudflarestorage.com with region auto; also Backblaze B2, MinIO, Wasabi, Google Cloud Storage's XML API (HMAC keys). Its host must resolve to a public address. Empty: AWS S3 in region.
+     */
+    endpoint?: string;
 };
 
 /**
@@ -393,6 +669,10 @@ export type SearchRequest = {
      * Hits a page (20; vector search 10).
      */
     limit?: number;
+    /**
+     * Search by meaning with a text, in a namespace with an embedding model (embed): it is embedded with that model and the tenant's key, then searched like vector (q and filter narrow it).
+     */
+    semantic?: string;
     /**
      * The next of the previous page.
      */
@@ -518,21 +798,28 @@ export type SignupRequest = {
 
 export type SqlRequest = {
     /**
-     * One SELECT ... FROM docs (or SHOW COLUMNS).
+     * One query (SELECT, WITH, UNION ...) whose tables are namespaces (docs: the one in the path), SHOW COLUMNS, or a write (write scope): INSERT INTO ns [(columns)] VALUES (...) | SELECT ..., CREATE TABLE ns AS SELECT ..., DELETE FROM ns [WHERE ...].
      */
     sql: string;
+    /**
+     * json: the answer below (at most 10,000 rows). ndjson or csv: the rows streamed as they're made, with no row cap (as ?format= or an Accept header).
+     */
+    format?: 'json' | 'ndjson' | 'csv';
 };
 
 export type SqlResult = {
+    /**
+     * The namespace in the path ("" for /v1/sql).
+     */
     namespace: string;
     columns: Array<string>;
     /**
-     * int, float or text, one a column.
+     * int, float, text, date, time, decimal (its values as strings, exact) or null (every value NULL), one a column.
      */
     types: Array<string>;
     rows: Array<Array<string | number | null>>;
     /**
-     * Column blocks in the namespace.
+     * Column blocks in the namespaces read.
      */
     chunks: number;
     /**
@@ -548,6 +835,32 @@ export type SqlResult = {
      */
     truncated: boolean;
     took_ms: number;
+    dml?: SqlWrite;
+    /**
+     * Present when the query ran from per-segment partials (one namespace and aggregates that merge from parts, or a view): which view's partials answered it and how many segments' partials were computed for it or reused. Always exact.
+     */
+    partials?: {
+        /**
+         * The named view read (several: comma-separated), or null.
+         */
+        view: string | null;
+        /**
+         * named: a view's kept partials; auto: an automatic view's (a query shape repeated on a big namespace); none: partials kept in memory only.
+         */
+        kind: 'named' | 'auto' | 'none';
+        /**
+         * Segments whose partials were computed for this query.
+         */
+        computed: number;
+        /**
+         * Segments whose partials were reused (unchanged since computed).
+         */
+        reused: number;
+        /**
+         * Of those computed, how many on other servers of the cluster.
+         */
+        remote: number;
+    };
     /**
      * How warm the namespace was: warm (open), local (opened from the server's disk) or cold (opened from object storage).
      */
@@ -568,6 +881,30 @@ export type SqlResult = {
      * The query ran past the plan's time limit (query_seconds): the answer is partial.
      */
     timed_out: boolean;
+};
+
+/**
+ * What a SQL write did (INSERT, CREATE TABLE, DELETE).
+ */
+export type SqlWrite = {
+    statement: 'insert' | 'create' | 'delete';
+    /**
+     * The namespace written.
+     */
+    namespace: string;
+    /**
+     * Documents written (an id that existed is replaced).
+     */
+    inserted: number;
+    deleted: number;
+    /**
+     * The namespace's version with the write.
+     */
+    version: number;
+    /**
+     * The statement made the namespace.
+     */
+    created: boolean;
 };
 
 export type StoredDocument = {
@@ -647,7 +984,14 @@ export type Usage = {
     mcp_queries: number;
     mcp_writes: number;
     embed_tokens: number;
+    /**
+     * CPU queries used (metered; the free plan includes plan.included_cpu_seconds).
+     */
     cpu_ms: number;
+    /**
+     * Bytes of answers sent back (metered; the free plan includes plan.included_out_gb).
+     */
+    out_bytes: number;
     stored_bytes: number;
     /**
      * Storage so far this period.
@@ -672,6 +1016,7 @@ export type UsageDay = {
     mcp_writes: number;
     embed_tokens: number;
     cpu_ms: number;
+    out_bytes: number;
     gb_months: number;
 };
 
@@ -681,6 +1026,26 @@ export type VectorConfig = {
      */
     dims: number;
     metric?: 'cosine' | 'euclidean';
+};
+
+export type View = {
+    name: string;
+    namespace: string;
+    sql: string;
+    created_at: string;
+};
+
+export type ViewCreated = {
+    name: string;
+    namespace: string;
+    sql: string;
+    created_at: string;
+    columns: Array<string>;
+    types: Array<string>;
+};
+
+export type ViewList = {
+    views: Array<View>;
 };
 
 export type WarmRequest = {
@@ -721,6 +1086,18 @@ export type WriteRequest = {
 };
 
 export type WriteResult = {
+    /**
+     * NDJSON streams: milliseconds.
+     */
+    took_ms?: number;
+    /**
+     * NDJSON streams: lines read.
+     */
+    lines?: number;
+    /**
+     * NDJSON streams: batches written.
+     */
+    batches?: number;
     /**
      * The namespace didn't exist: this write made it (with vectors of the first vector's length, cosine, when the documents have vectors; else text only). Check it to catch a mistyped name.
      */
@@ -826,6 +1203,138 @@ export type LoginResponses = {
 };
 
 export type LoginResponse = LoginResponses[keyof LoginResponses];
+
+export type VerifyEmailData = {
+    body: {
+        /**
+         * From the emailed link (its token= part).
+         */
+        token: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/v1/email/verify';
+};
+
+export type VerifyEmailErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+};
+
+export type VerifyEmailError = VerifyEmailErrors[keyof VerifyEmailErrors];
+
+export type VerifyEmailResponses = {
+    /**
+     * OK
+     */
+    200: {
+        verified: boolean;
+    };
+};
+
+export type VerifyEmailResponse = VerifyEmailResponses[keyof VerifyEmailResponses];
+
+export type ResendVerificationData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/email/verify/resend';
+};
+
+export type ResendVerificationErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+};
+
+export type ResendVerificationError = ResendVerificationErrors[keyof ResendVerificationErrors];
+
+export type ResendVerificationResponses = {
+    /**
+     * OK
+     */
+    202: ResendResult;
+};
+
+export type ResendVerificationResponse = ResendVerificationResponses[keyof ResendVerificationResponses];
+
+export type ForgotPasswordData = {
+    body: {
+        email: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/v1/password/forgot';
+};
+
+export type ForgotPasswordErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+};
+
+export type ForgotPasswordError = ForgotPasswordErrors[keyof ForgotPasswordErrors];
+
+export type ForgotPasswordResponses = {
+    /**
+     * OK
+     */
+    202: {
+        sent: boolean;
+    };
+};
+
+export type ForgotPasswordResponse = ForgotPasswordResponses[keyof ForgotPasswordResponses];
+
+export type ResetPasswordData = {
+    body: {
+        token: string;
+        password: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/v1/password/reset';
+};
+
+export type ResetPasswordErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+};
+
+export type ResetPasswordError = ResetPasswordErrors[keyof ResetPasswordErrors];
+
+export type ResetPasswordResponses = {
+    /**
+     * OK
+     */
+    200: {
+        reset: boolean;
+    };
+};
+
+export type ResetPasswordResponse = ResetPasswordResponses[keyof ResetPasswordResponses];
 
 export type GetMeData = {
     body?: never;
@@ -991,6 +1500,117 @@ export type SetKeyLimitsResponses = {
 };
 
 export type SetKeyLimitsResponse = SetKeyLimitsResponses[keyof SetKeyLimitsResponses];
+
+export type ListEmbeddingKeysData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/embedding-keys';
+};
+
+export type ListEmbeddingKeysErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+};
+
+export type ListEmbeddingKeysError = ListEmbeddingKeysErrors[keyof ListEmbeddingKeysErrors];
+
+export type ListEmbeddingKeysResponses = {
+    /**
+     * OK
+     */
+    200: EmbeddingKeyList;
+};
+
+export type ListEmbeddingKeysResponse = ListEmbeddingKeysResponses[keyof ListEmbeddingKeysResponses];
+
+export type DeleteEmbeddingKeyData = {
+    body?: never;
+    path: {
+        provider: string;
+    };
+    query?: never;
+    url: '/v1/embedding-keys/{provider}';
+};
+
+export type DeleteEmbeddingKeyErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+};
+
+export type DeleteEmbeddingKeyError = DeleteEmbeddingKeyErrors[keyof DeleteEmbeddingKeyErrors];
+
+export type DeleteEmbeddingKeyResponses = {
+    /**
+     * Done (no body)
+     */
+    204: void;
+};
+
+export type DeleteEmbeddingKeyResponse = DeleteEmbeddingKeyResponses[keyof DeleteEmbeddingKeyResponses];
+
+export type SetEmbeddingKeyData = {
+    body: EmbeddingKeyRequest;
+    path: {
+        provider: string;
+    };
+    query?: never;
+    url: '/v1/embedding-keys/{provider}';
+};
+
+export type SetEmbeddingKeyErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Billing (Stripe) is unavailable right now.
+     */
+    502: Error;
+};
+
+export type SetEmbeddingKeyError = SetEmbeddingKeyErrors[keyof SetEmbeddingKeyErrors];
+
+export type SetEmbeddingKeyResponses = {
+    /**
+     * OK
+     */
+    200: EmbeddingKey;
+};
+
+export type SetEmbeddingKeyResponse = SetEmbeddingKeyResponses[keyof SetEmbeddingKeyResponses];
 
 export type ListTenantsData = {
     body?: never;
@@ -1277,7 +1897,7 @@ export type CreateNamespaceErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -1393,6 +2013,60 @@ export type GetNamespaceResponses = {
 
 export type GetNamespaceResponse = GetNamespaceResponses[keyof GetNamespaceResponses];
 
+export type UpdateNamespaceData = {
+    body: NamespacePatch;
+    path: {
+        /**
+         * The namespace's name.
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/v1/namespaces/{name}';
+};
+
+export type UpdateNamespaceErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Exists already, or not possible in this state.
+     */
+    409: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Billing (Stripe) is unavailable right now.
+     */
+    502: Error;
+};
+
+export type UpdateNamespaceError = UpdateNamespaceErrors[keyof UpdateNamespaceErrors];
+
+export type UpdateNamespaceResponses = {
+    /**
+     * OK
+     */
+    200: Namespace;
+};
+
+export type UpdateNamespaceResponse = UpdateNamespaceResponses[keyof UpdateNamespaceResponses];
+
 export type UpdateDocumentsData = {
     body: UpdateRequest;
     path: {
@@ -1415,7 +2089,7 @@ export type UpdateDocumentsErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -1438,6 +2112,10 @@ export type UpdateDocumentsErrors = {
      * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
      */
     429: Error;
+    /**
+     * Billing (Stripe) is unavailable right now.
+     */
+    502: Error;
     /**
      * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
      */
@@ -1467,7 +2145,12 @@ export type WriteDocumentsData = {
          */
         name: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * NDJSON bodies: answer once the last batch is searchable.
+         */
+        wait?: boolean;
+    };
     url: '/v1/namespaces/{name}/docs';
 };
 
@@ -1481,7 +2164,85 @@ export type WriteDocumentsErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
+     */
+    402: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Too big: a request's documents (64 MB), an import (2 GB), or what a SQL query would read.
+     */
+    413: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Billing (Stripe) is unavailable right now.
+     */
+    502: Error;
+    /**
+     * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
+     */
+    503: Error;
+    /**
+     * The tenant's storage quota is full.
+     */
+    507: Error;
+};
+
+export type WriteDocumentsError = WriteDocumentsErrors[keyof WriteDocumentsErrors];
+
+export type WriteDocumentsResponses = {
+    /**
+     * OK
+     */
+    200: WriteResult;
+};
+
+export type WriteDocumentsResponse = WriteDocumentsResponses[keyof WriteDocumentsResponses];
+
+export type WriteDocumentStreamData = {
+    /**
+     * One document a line.
+     */
+    body: string;
+    path: {
+        /**
+         * The namespace's name.
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * Answer once the last batch is searchable.
+         */
+        wait?: boolean;
+    };
+    url: '/v1/namespaces/{name}/docs/stream';
+};
+
+export type WriteDocumentStreamErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -1514,16 +2275,16 @@ export type WriteDocumentsErrors = {
     507: Error;
 };
 
-export type WriteDocumentsError = WriteDocumentsErrors[keyof WriteDocumentsErrors];
+export type WriteDocumentStreamError = WriteDocumentStreamErrors[keyof WriteDocumentStreamErrors];
 
-export type WriteDocumentsResponses = {
+export type WriteDocumentStreamResponses = {
     /**
      * OK
      */
     200: WriteResult;
 };
 
-export type WriteDocumentsResponse = WriteDocumentsResponses[keyof WriteDocumentsResponses];
+export type WriteDocumentStreamResponse = WriteDocumentStreamResponses[keyof WriteDocumentStreamResponses];
 
 export type DeleteDocumentsData = {
     body: DeleteRequest;
@@ -1547,7 +2308,7 @@ export type DeleteDocumentsErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -1609,7 +2370,7 @@ export type GetDocumentErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -1670,6 +2431,10 @@ export type ImportRowsData = {
          * CSV: a CREATE TABLE giving the columns' types (default: from the header, kinds inferred).
          */
         schema?: string;
+        /**
+         * Fetch the file from this https URL (presigned S3 / GCS, or any public server) instead of the body.
+         */
+        url?: string;
     };
     url: '/v1/namespaces/{name}/import';
 };
@@ -1684,7 +2449,7 @@ export type ImportRowsErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -1727,6 +2492,138 @@ export type ImportRowsResponses = {
 };
 
 export type ImportRowsResponse = ImportRowsResponses[keyof ImportRowsResponses];
+
+export type ImportBucketData = {
+    body: BucketImportRequest;
+    path: {
+        /**
+         * The namespace's name.
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/v1/namespaces/{name}/import/bucket';
+};
+
+export type ImportBucketErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
+     */
+    402: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Too big: a request's documents (64 MB), an import (2 GB), or what a SQL query would read.
+     */
+    413: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
+     */
+    503: Error;
+    /**
+     * The tenant's storage quota is full.
+     */
+    507: Error;
+};
+
+export type ImportBucketError = ImportBucketErrors[keyof ImportBucketErrors];
+
+export type ImportBucketResponses = {
+    /**
+     * OK
+     */
+    200: BucketImportResult;
+};
+
+export type ImportBucketResponse = ImportBucketResponses[keyof ImportBucketResponses];
+
+export type SyncLakeData = {
+    body: LakeSyncRequest;
+    path: {
+        /**
+         * The namespace's name.
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/v1/namespaces/{name}/lake/sync';
+};
+
+export type SyncLakeErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
+     */
+    402: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Exists already, or not possible in this state.
+     */
+    409: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
+     */
+    503: Error;
+    /**
+     * The tenant's storage quota is full.
+     */
+    507: Error;
+};
+
+export type SyncLakeError = SyncLakeErrors[keyof SyncLakeErrors];
+
+export type SyncLakeResponses = {
+    /**
+     * OK
+     */
+    200: LakeSyncResult;
+};
+
+export type SyncLakeResponse = SyncLakeResponses[keyof SyncLakeResponses];
 
 export type SearchGetData = {
     body?: never;
@@ -1775,7 +2672,7 @@ export type SearchGetErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -1833,7 +2730,7 @@ export type SearchErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -1852,6 +2749,10 @@ export type SearchErrors = {
      * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
      */
     429: Error;
+    /**
+     * Billing (Stripe) is unavailable right now.
+     */
+    502: Error;
     /**
      * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
      */
@@ -1916,7 +2817,7 @@ export type CountGetErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -1974,7 +2875,7 @@ export type CountErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -2032,7 +2933,7 @@ export type WarmNamespaceErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -2068,19 +2969,28 @@ export type WarmNamespaceResponses = {
 
 export type WarmNamespaceResponse = WarmNamespaceResponses[keyof WarmNamespaceResponses];
 
-export type QuerySqlData = {
-    body: SqlRequest;
+export type QuerySqlGetData = {
+    body?: never;
     path: {
         /**
          * The namespace's name.
          */
         name: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * The query, URL-encoded.
+         */
+        sql?: string;
+        /**
+         * ndjson or csv: every row streamed as it's made (no 10,000-row cap; Accept: application/x-ndjson or text/csv does the same). Its types come in X-Skimmerdb-Types. An error before the first row is the usual JSON error; after it, NDJSON gets a last error line and the transfer is broken off (never a short answer that looks whole).
+         */
+        format?: 'json' | 'ndjson' | 'csv';
+    };
     url: '/v1/namespaces/{name}/sql';
 };
 
-export type QuerySqlErrors = {
+export type QuerySqlGetErrors = {
     /**
      * Malformed: not the JSON expected.
      */
@@ -2090,7 +3000,7 @@ export type QuerySqlErrors = {
      */
     401: Error;
     /**
-     * The free plan's included usage this period is used up, or its namespace count is reached (code namespace_limit): upgrade to pro.
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
      */
     402: Error;
     /**
@@ -2101,6 +3011,10 @@ export type QuerySqlErrors = {
      * No such namespace, document, key or tenant (or one this key may not see: the same answer).
      */
     404: Error;
+    /**
+     * Not with this method: SQL that writes needs POST.
+     */
+    405: Error;
     /**
      * Too big: a request's documents (64 MB), an import (2 GB), or what a SQL query would read.
      */
@@ -2119,6 +3033,81 @@ export type QuerySqlErrors = {
     503: Error;
 };
 
+export type QuerySqlGetError = QuerySqlGetErrors[keyof QuerySqlGetErrors];
+
+export type QuerySqlGetResponses = {
+    /**
+     * OK
+     */
+    200: SqlResult;
+};
+
+export type QuerySqlGetResponse = QuerySqlGetResponses[keyof QuerySqlGetResponses];
+
+export type QuerySqlData = {
+    body: SqlRequest;
+    path: {
+        /**
+         * The namespace's name.
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * ndjson or csv: every row streamed as it's made (no 10,000-row cap; Accept: application/x-ndjson or text/csv does the same). Its types come in X-Skimmerdb-Types. An error before the first row is the usual JSON error; after it, NDJSON gets a last error line and the transfer is broken off (never a short answer that looks whole).
+         */
+        format?: 'json' | 'ndjson' | 'csv';
+    };
+    url: '/v1/namespaces/{name}/sql';
+};
+
+export type QuerySqlErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
+     */
+    402: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Exists already, or not possible in this state.
+     */
+    409: Error;
+    /**
+     * Too big: a request's documents (64 MB), an import (2 GB), or what a SQL query would read.
+     */
+    413: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
+     */
+    503: Error;
+    /**
+     * The tenant's storage quota is full.
+     */
+    507: Error;
+};
+
 export type QuerySqlError = QuerySqlErrors[keyof QuerySqlErrors];
 
 export type QuerySqlResponses = {
@@ -2129,6 +3118,515 @@ export type QuerySqlResponses = {
 };
 
 export type QuerySqlResponse = QuerySqlResponses[keyof QuerySqlResponses];
+
+export type QuerySqlTenantGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * The query, URL-encoded.
+         */
+        sql?: string;
+        /**
+         * ndjson or csv: every row streamed as it's made (no 10,000-row cap; Accept: application/x-ndjson or text/csv does the same). Its types come in X-Skimmerdb-Types. An error before the first row is the usual JSON error; after it, NDJSON gets a last error line and the transfer is broken off (never a short answer that looks whole).
+         */
+        format?: 'json' | 'ndjson' | 'csv';
+    };
+    url: '/v1/sql';
+};
+
+export type QuerySqlTenantGetErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
+     */
+    402: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Not with this method: SQL that writes needs POST.
+     */
+    405: Error;
+    /**
+     * Too big: a request's documents (64 MB), an import (2 GB), or what a SQL query would read.
+     */
+    413: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
+     */
+    503: Error;
+};
+
+export type QuerySqlTenantGetError = QuerySqlTenantGetErrors[keyof QuerySqlTenantGetErrors];
+
+export type QuerySqlTenantGetResponses = {
+    /**
+     * OK
+     */
+    200: SqlResult;
+};
+
+export type QuerySqlTenantGetResponse = QuerySqlTenantGetResponses[keyof QuerySqlTenantGetResponses];
+
+export type QuerySqlTenantData = {
+    body: SqlRequest;
+    path?: never;
+    query?: {
+        /**
+         * ndjson or csv: every row streamed as it's made (no 10,000-row cap; Accept: application/x-ndjson or text/csv does the same). Its types come in X-Skimmerdb-Types. An error before the first row is the usual JSON error; after it, NDJSON gets a last error line and the transfer is broken off (never a short answer that looks whole).
+         */
+        format?: 'json' | 'ndjson' | 'csv';
+    };
+    url: '/v1/sql';
+};
+
+export type QuerySqlTenantErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
+     */
+    402: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Exists already, or not possible in this state.
+     */
+    409: Error;
+    /**
+     * Too big: a request's documents (64 MB), an import (2 GB), or what a SQL query would read.
+     */
+    413: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
+     */
+    503: Error;
+    /**
+     * The tenant's storage quota is full.
+     */
+    507: Error;
+};
+
+export type QuerySqlTenantError = QuerySqlTenantErrors[keyof QuerySqlTenantErrors];
+
+export type QuerySqlTenantResponses = {
+    /**
+     * OK
+     */
+    200: SqlResult;
+};
+
+export type QuerySqlTenantResponse = QuerySqlTenantResponses[keyof QuerySqlTenantResponses];
+
+export type ListViewsData = {
+    body?: never;
+    path: {
+        /**
+         * The namespace's name.
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/v1/namespaces/{name}/views';
+};
+
+export type ListViewsErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+};
+
+export type ListViewsError = ListViewsErrors[keyof ListViewsErrors];
+
+export type ListViewsResponses = {
+    /**
+     * OK
+     */
+    200: ViewList;
+};
+
+export type ListViewsResponse = ListViewsResponses[keyof ListViewsResponses];
+
+export type CreateViewData = {
+    body: {
+        /**
+         * 1 to 64 of a-z, 0-9, '-', '_' and '.'
+         */
+        name: string;
+        /**
+         * The query, over docs.
+         */
+        sql: string;
+    };
+    path: {
+        /**
+         * The namespace's name.
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/v1/namespaces/{name}/views';
+};
+
+export type CreateViewErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
+     */
+    402: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Exists already, or not possible in this state.
+     */
+    409: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
+     */
+    503: Error;
+};
+
+export type CreateViewError = CreateViewErrors[keyof CreateViewErrors];
+
+export type CreateViewResponses = {
+    /**
+     * Created
+     */
+    201: ViewCreated;
+};
+
+export type CreateViewResponse = CreateViewResponses[keyof CreateViewResponses];
+
+export type DeleteViewData = {
+    body?: never;
+    path: {
+        /**
+         * The namespace's name.
+         */
+        name: string;
+        view: string;
+    };
+    query?: never;
+    url: '/v1/namespaces/{name}/views/{view}';
+};
+
+export type DeleteViewErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+};
+
+export type DeleteViewError = DeleteViewErrors[keyof DeleteViewErrors];
+
+export type DeleteViewResponses = {
+    /**
+     * Done (no body)
+     */
+    204: void;
+};
+
+export type DeleteViewResponse = DeleteViewResponses[keyof DeleteViewResponses];
+
+export type GetViewData = {
+    body?: never;
+    path: {
+        /**
+         * The namespace's name.
+         */
+        name: string;
+        view: string;
+    };
+    query?: never;
+    url: '/v1/namespaces/{name}/views/{view}';
+};
+
+export type GetViewErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+};
+
+export type GetViewError = GetViewErrors[keyof GetViewErrors];
+
+export type GetViewResponses = {
+    /**
+     * OK
+     */
+    200: View;
+};
+
+export type GetViewResponse = GetViewResponses[keyof GetViewResponses];
+
+export type ListExportsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/v1/sql/exports';
+};
+
+export type ListExportsErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+};
+
+export type ListExportsError = ListExportsErrors[keyof ListExportsErrors];
+
+export type ListExportsResponses = {
+    /**
+     * OK
+     */
+    200: ExportList;
+};
+
+export type ListExportsResponse = ListExportsResponses[keyof ListExportsResponses];
+
+export type CreateExportData = {
+    body: ExportRequest;
+    path?: never;
+    query?: never;
+    url: '/v1/sql/exports';
+};
+
+export type CreateExportErrors = {
+    /**
+     * Malformed: not the JSON expected.
+     */
+    400: Error;
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
+     */
+    402: Error;
+    /**
+     * The key's scope or namespaces don't allow it, or the tenant is suspended.
+     */
+    403: Error;
+    /**
+     * Invalid: the message says why (code invalid with fields: which input fields; query_timeout: past the plan's time limit; scan_refused: send scan: true).
+     */
+    422: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
+     */
+    503: Error;
+};
+
+export type CreateExportError = CreateExportErrors[keyof CreateExportErrors];
+
+export type CreateExportResponses = {
+    /**
+     * OK
+     */
+    202: Export;
+};
+
+export type CreateExportResponse = CreateExportResponses[keyof CreateExportResponses];
+
+export type GetExportData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/sql/exports/{id}';
+};
+
+export type GetExportErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+};
+
+export type GetExportError = GetExportErrors[keyof GetExportErrors];
+
+export type GetExportResponses = {
+    /**
+     * OK
+     */
+    200: Export;
+};
+
+export type GetExportResponse = GetExportResponses[keyof GetExportResponses];
+
+export type DownloadExportData = {
+    body?: never;
+    headers?: {
+        /**
+         * bytes=first-last, bytes=first- or bytes=-suffix: part of the file (206).
+         */
+        Range?: string;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/v1/sql/exports/{id}/download';
+};
+
+export type DownloadExportErrors = {
+    /**
+     * No key, or an unknown or revoked one.
+     */
+    401: Error;
+    /**
+     * The free plan's included usage this period is used up (queries, query CPU, object-storage reads, bytes returned, writes or storage; the message says which), or its namespace count or daily namespace creations are reached (code namespace_limit): upgrade to pro.
+     */
+    402: Error;
+    /**
+     * No such namespace, document, key or tenant (or one this key may not see: the same answer).
+     */
+    404: Error;
+    /**
+     * Exists already, or not possible in this state.
+     */
+    409: Error;
+    /**
+     * It existed, but not anymore (an export past its 24 hours).
+     */
+    410: Error;
+    /**
+     * The Range asked for isn't in the file.
+     */
+    416: Error;
+    /**
+     * Over the tenant's or the key's rate, concurrency or cap, or writes arriving faster than the namespace commits them (code write_busy): retry after Retry-After seconds.
+     */
+    429: Error;
+    /**
+     * Object storage failed: retry (nothing was written, unless the code is write_unknown: then it may have been; retrying a write is safe).
+     */
+    503: Error;
+};
+
+export type DownloadExportError = DownloadExportErrors[keyof DownloadExportErrors];
+
+export type DownloadExportResponses = {
+    /**
+     * OK
+     */
+    200: Blob | File;
+};
+
+export type DownloadExportResponse = DownloadExportResponses[keyof DownloadExportResponses];
 
 export type ListSidecarsData = {
     body?: never;
